@@ -98,6 +98,19 @@ const CELL_1_COLOR = 0xff0000;
 const CELL_2_COLOR = 0x00ff00;
 const CELL_3_COLOR = 0x4466ff;
 const CELL_TYPES = [CELL_1, CELL_2, CELL_3];
+function getCellColor(cellValue) {
+    let color = 0xffffff;
+    if ((CELL_TYPE_MASK & cellValue) == 1) {
+        color = CELL_1_COLOR;
+    }
+    else if ((CELL_TYPE_MASK & cellValue) == 2) {
+        color = CELL_2_COLOR;
+    }
+    else if ((CELL_TYPE_MASK & cellValue) == 3) {
+        color = CELL_3_COLOR;
+    }
+    return color;
+}
 const SHIFT_TICKS_REPEAT_DELAY = 15;
 const SHIFT_TICKS_REPEAT_RATE = 6;
 const SHOVE_TICKS_REPEAT_DELAY = 2;
@@ -150,6 +163,32 @@ class SceneTargetTotals extends Phaser.Scene {
         }
     }
 }
+class SceneNextCells extends Phaser.Scene {
+    constructor(config) {
+        super(config);
+    }
+    preload() {
+        this.load.image('joined', 'assets/pics/joined.png');
+        this.cameras.main.setViewport(575, 38, 160, 100);
+    }
+    create(data) {
+        this.add.rectangle(0, 0, 320, 200, 0, 0.5);
+        this.add.text(0, 10, 'NEXT', { fontSize: '20px', fontFamily: 'Sans-Serif', fontStyle: 'bold', color: '#fff', stroke: '#000', strokeThickness: 4, align: 'center', fixedWidth: 160 });
+        this.leftCell = this.add.sprite(64, 64, 'joined');
+        this.leftCell.setScale(0.125, 0.125);
+        this.rightCell = this.add.sprite(96, 64, 'joined');
+        this.rightCell.setScale(0.125, 0.125);
+        this.rightCell.flipX = true;
+        data.boardEvents.on('newNext', this.handler, this);
+    }
+    update(time, delta) {
+    }
+    handler(leftCellType, rightCellType) {
+        var _a, _b;
+        (_a = this.leftCell) === null || _a === void 0 ? void 0 : _a.setTint(getCellColor(leftCellType));
+        (_b = this.rightCell) === null || _b === void 0 ? void 0 : _b.setTint(getCellColor(rightCellType));
+    }
+}
 class SceneGrid extends Phaser.Scene {
     constructor(config) {
         super(config !== null && config !== void 0 ? config : { key: 'SceneGrid', active: true });
@@ -167,6 +206,7 @@ class SceneGrid extends Phaser.Scene {
         this.activePosCol = 0;
         this.activeRotation = 0;
         this.cellsActive = Array();
+        this.cellsNext = Array();
         this.dropCounter = 0;
         this.dropRate = 40;
         this.targetTotals = new TargetTotals(); // a new instance should get passed in with create();
@@ -558,6 +598,7 @@ class SceneGrid extends Phaser.Scene {
     }
     startup(data) {
         var _a, _b;
+        this.gameThingies = data;
         this.gameState = GAME_STATE_PREGAME;
         this.grid.forEach((item, i, arr) => arr[i] = CELL_EMPTY);
         this.level = (_a = data.gameSettings.level) !== null && _a !== void 0 ? _a : 0;
@@ -565,6 +606,10 @@ class SceneGrid extends Phaser.Scene {
         let numTargets = level.numTargets;
         this.targetTotals = (_b = data.targetTotals) !== null && _b !== void 0 ? _b : this.targetTotals;
         this.add.rectangle(128, 272, 256, 544, 0, 0.5);
+        this.cellsNext.length = 0;
+        this.cellsNext.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
+        this.cellsNext.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
+        this.gameThingies.boardEvents.emit('newNext', this.cellsNext[0], this.cellsNext[1]);
         if (ENABLE_DEBUG) {
             this.debugText = this.add.text(4, 4, 'NNN', { font: '20px Sans-Serif', color: '#000' });
             // Add some targets on the board
@@ -609,7 +654,6 @@ class SceneGrid extends Phaser.Scene {
         this.activePosRow = this.startRow;
         this.activePosCol = this.startCol;
         this.activeRotation = 0;
-        // this.cellsActive.push(CELL_1, CELL_2)
         if (this.input.keyboard !== null) {
             this.cursors = this.input.keyboard.createCursorKeys();
             this.cursors.space.on('down', this.receivedRotate, this);
@@ -629,6 +673,7 @@ class SceneGrid extends Phaser.Scene {
         this.startup(data);
     }
     update(time, delta) {
+        var _a;
         let ticksAndFraction = (delta / this.tickDuration) + this.ticksLeftover;
         let ticksToUpdate;
         // If not enough time has passed for a full tick, but for over half a tick, then
@@ -649,15 +694,14 @@ class SceneGrid extends Phaser.Scene {
                     break;
                 }
                 case GAME_STATE_RELEASING: {
-                    if (!ENABLE_DEBUG) {
+                    if (this.releaseCounter == 0) {
                         // TODO Find better place for getting next cell colors.
                         this.cellsActive.length = 0;
-                        this.cellsActive.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
-                        this.cellsActive.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
-                    }
-                    else {
-                        this.cellsActive.length = 0;
-                        this.cellsActive.push(CELL_1, CELL_2);
+                        this.cellsActive.push(this.cellsNext[0], this.cellsNext[1]);
+                        this.cellsNext.length = 0;
+                        this.cellsNext.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
+                        this.cellsNext.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
+                        (_a = this.gameThingies) === null || _a === void 0 ? void 0 : _a.boardEvents.emit('newNext', this.cellsNext[0], this.cellsNext[1]);
                     }
                     if (this.releaseCounter < 45) {
                         ++this.releaseCounter;
@@ -867,9 +911,10 @@ let config = {
 const GAME = new Phaser.Game(config);
 let counter = new TargetTotals();
 let gameSettings = { level: 0, speed: 40 };
-let gameThingies = { gameSettings: gameSettings, targetTotals: counter };
+let gameThingies = { gameSettings: gameSettings, targetTotals: counter, boardEvents: new Phaser.Events.EventEmitter() };
 GAME.scene.add('SceneBackground', SceneBackground, true);
 GAME.scene.add('SceneTargetTotals', SceneTargetTotals, true, { targetTotals: counter });
+GAME.scene.add('SceneNextCells', SceneNextCells, true, gameThingies);
 GAME.scene.add('SceneGrid', SceneGrid, true, gameThingies);
 GAME.scene.add('SceneLevelClear', SceneLevelClear, false, gameThingies);
 GAME.scene.add('SceneLevelLost', SceneLevelLost, false);
