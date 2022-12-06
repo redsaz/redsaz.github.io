@@ -189,6 +189,26 @@ class SceneNextCells extends Phaser.Scene {
         (_b = this.rightCell) === null || _b === void 0 ? void 0 : _b.setTint(getCellColor(rightCellType));
     }
 }
+class SceneLevelInfo extends Phaser.Scene {
+    constructor(config) {
+        super(config);
+    }
+    preload() {
+        this.cameras.main.setViewport(575, 160, 160, 88);
+    }
+    create(data) {
+        this.add.rectangle(0, 0, 320, 176, 0, 0.5);
+        this.add.text(0, 10, 'LEVEL', { fontSize: '20px', fontFamily: 'Sans-Serif', fontStyle: 'bold', color: '#fff', stroke: '#000', strokeThickness: 4, align: 'center', fixedWidth: 160 });
+        this.levelText = this.add.text(0, 40, '0', { fontSize: '30px', fontFamily: 'Sans-Serif', fontStyle: 'bold', color: '#fff', stroke: '#000', strokeThickness: 5, align: 'center', fixedWidth: 160 });
+        data.boardEvents.on('newBoard', this.handler, this);
+    }
+    update(time, delta) {
+    }
+    handler(level) {
+        var _a;
+        (_a = this.levelText) === null || _a === void 0 ? void 0 : _a.setText(level.toString());
+    }
+}
 class SceneGrid extends Phaser.Scene {
     constructor(config) {
         super(config !== null && config !== void 0 ? config : { key: 'SceneGrid', active: true });
@@ -363,8 +383,24 @@ class SceneGrid extends Phaser.Scene {
             this.gridDisplay[index] = this.cellToScene(row, col, cellValue);
         }
     }
+    gridMove(row, col, rowChange, colChange) {
+        var _a;
+        let sourceIndex = row * this.gridCols + col;
+        let targetIndex = (row + rowChange) * this.gridCols + col + colChange;
+        let sourceCell = this.grid[sourceIndex];
+        let oldTargetCell = this.grid[targetIndex];
+        if (oldTargetCell != CELL_EMPTY) {
+            let sprite = this.gridDisplay[targetIndex];
+            sprite === null || sprite === void 0 ? void 0 : sprite.destroy();
+        }
+        this.grid[targetIndex] = sourceCell;
+        this.grid[sourceIndex] = CELL_EMPTY;
+        this.gridDisplay[targetIndex] = this.gridDisplay[sourceIndex];
+        this.gridDisplay[sourceIndex] = null;
+        (_a = this.gridDisplay[targetIndex]) === null || _a === void 0 ? void 0 : _a.setPosition(this.colToX(col + colChange), this.rowToY(row + rowChange));
+    }
     // Deletes the cell at the location, and "unjoins" any cells joined to that cell.
-    gridDelete(row, col) {
+    gridDelete(fancy, row, col) {
         let old = this.gridGet(row, col);
         // If cell is connected above, remove that cell's respective join.
         if ((old & CELL_JOINED_TOP) != 0) {
@@ -382,7 +418,28 @@ class SceneGrid extends Phaser.Scene {
         if ((old & CELL_JOINED_LEFT) != 0) {
             this.gridSet(row, col - 1, this.gridGet(row, col - 1) & ~CELL_JOINED_RIGHT);
         }
-        this.gridSet(row, col, CELL_EMPTY);
+        // Fancy delete the given cell
+        let index = row * this.gridCols + col;
+        let oldCell = this.grid[index];
+        if (oldCell != CELL_EMPTY) {
+            this.grid[index] = CELL_EMPTY;
+            let sprite = this.gridDisplay[index];
+            if (fancy) {
+                this.tweens.add({
+                    targets: sprite,
+                    alpha: 0,
+                    scaleX: 0,
+                    scaleY: 0,
+                    persist: false,
+                    duration: 250,
+                    callbackScope: sprite,
+                    onComplete: () => sprite === null || sprite === void 0 ? void 0 : sprite.destroy()
+                });
+            }
+            else {
+                sprite === null || sprite === void 0 ? void 0 : sprite.destroy();
+            }
+        }
         return old;
     }
     cellsActiveCanMove(posRow, posCol, rotation) {
@@ -414,7 +471,7 @@ class SceneGrid extends Phaser.Scene {
         });
         // Clear the grid's topmost row of cells, as cells shouldn't be set there
         for (let col = 0; col < this.gridCols; ++col) {
-            this.gridDelete(this.gridRows - 1, col);
+            this.gridDelete(false, this.gridRows - 1, col);
         }
         // Delete the active sprites
         while (this.cellsActiveDisplay.length) {
@@ -551,9 +608,7 @@ class SceneGrid extends Phaser.Scene {
                 let shouldDrop = dropline[col];
                 dropped || (dropped = shouldDrop);
                 if (shouldDrop) {
-                    let cell = this.gridGet(row, col);
-                    this.gridSet(row - 1, col, cell);
-                    this.gridSet(row, col, CELL_EMPTY);
+                    this.gridMove(row, col, -1, 0);
                 }
             }
         }
@@ -605,6 +660,7 @@ class SceneGrid extends Phaser.Scene {
         let level = LEVELS[Math.min(this.level, 20)];
         let numTargets = level.numTargets;
         this.targetTotals = (_b = data.targetTotals) !== null && _b !== void 0 ? _b : this.targetTotals;
+        this.gameThingies.boardEvents.emit('newBoard', this.level);
         this.add.rectangle(128, 272, 256, 544, 0, 0.5);
         this.cellsNext.length = 0;
         this.cellsNext.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
@@ -735,7 +791,7 @@ class SceneGrid extends Phaser.Scene {
                             // TODO: This should not be instant.
                             let seriesToClear = this.getCellsToClear();
                             seriesToClear.forEach(series => series.forEach(cell => {
-                                let deleted = this.gridDelete(...cell);
+                                let deleted = this.gridDelete(true, ...cell);
                                 // Decrement the counter corresponding to the target cleared.
                                 if ((deleted & CELL_TARGET) != 0) {
                                     let deletedType = deleted & CELL_TYPE_MASK;
@@ -915,6 +971,7 @@ let gameThingies = { gameSettings: gameSettings, targetTotals: counter, boardEve
 GAME.scene.add('SceneBackground', SceneBackground, true);
 GAME.scene.add('SceneTargetTotals', SceneTargetTotals, true, { targetTotals: counter });
 GAME.scene.add('SceneNextCells', SceneNextCells, true, gameThingies);
+GAME.scene.add('SceneLevelInfo', SceneLevelInfo, true, gameThingies);
 GAME.scene.add('SceneGrid', SceneGrid, true, gameThingies);
 GAME.scene.add('SceneLevelClear', SceneLevelClear, false, gameThingies);
 GAME.scene.add('SceneLevelLost', SceneLevelLost, false);
