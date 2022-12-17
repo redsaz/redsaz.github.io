@@ -180,7 +180,6 @@ class SceneLevelLost extends Phaser.Scene {
     update(time, delta) {
     }
 }
-const ENABLE_DEBUG = false;
 const CELL_TYPE_MASK = 7;
 const CELL_EMPTY = 0;
 const CELL_JOINED_TOP = 16;
@@ -555,10 +554,10 @@ class SceneGrid extends Phaser.Scene {
             join2 = CELL_JOINED_LEFT;
         }
         else if (rotation == 1) {
-            // In 1st rotation, first cell is at row and col, second cell is above.
-            row += index;
-            join1 = CELL_JOINED_TOP;
-            join2 = CELL_JOINED_BOTTOM;
+            // In 1st rotation, first cell is above, second cell is at row and col.
+            row += 1 - index;
+            join1 = CELL_JOINED_BOTTOM;
+            join2 = CELL_JOINED_TOP;
         }
         else if (rotation == 2) {
             // In 2nd rotation, first cell is to the right, second cell is at row and col.
@@ -567,10 +566,10 @@ class SceneGrid extends Phaser.Scene {
             join2 = CELL_JOINED_RIGHT;
         }
         else if (rotation == 3) {
-            // In 3rd rotation, first cell is above, second cell is at row and col.
-            row += 1 - index;
-            join1 = CELL_JOINED_BOTTOM;
-            join2 = CELL_JOINED_TOP;
+            // In 3rd rotation, first cell is at row and col, second cell is above.
+            row += index;
+            join1 = CELL_JOINED_TOP;
+            join2 = CELL_JOINED_BOTTOM;
         }
         // Use the correct join depending on which active cell we're looking at
         cellValue &= CELL_TYPE_MASK;
@@ -593,16 +592,16 @@ class SceneGrid extends Phaser.Scene {
             col += index;
         }
         else if (rotation == 1) {
-            // In 1st rotation, first cell is at row and col, second cell is above.
-            row += index;
+            // In 1st rotation, first cell is above, second cell is at row and col.
+            row += 1 - index;
         }
         else if (rotation == 2) {
             // In 2nd rotation, first cell is to the right, second cell is at row and col.
             col += 1 - index;
         }
         else if (rotation == 3) {
-            // In 3rd rotation, first cell is above, second cell is at row and col.
-            row += 1 - index;
+            // In 3rd rotation, first cell is at row and col, second cell is above.
+            row += index;
         }
         sprite.setPosition(this.colToX(col), this.rowToY(row) + 4);
     }
@@ -789,7 +788,13 @@ class SceneGrid extends Phaser.Scene {
         }
         return setsToClear;
     }
-    receivedRotate() {
+    receivedRotateCcw() {
+        this.rotate(-1);
+    }
+    receivedRotateCw() {
+        this.rotate(1);
+    }
+    rotate(amount) {
         var _a;
         // Can only rotate when active cell is in play
         if (this.gameState != GAME_STATE_ACTIVE) {
@@ -798,7 +803,7 @@ class SceneGrid extends Phaser.Scene {
         // If the proposed rotation will not clobber a filled cell, then allow it, but if rotating
         // from a vertical position to a horizontal one and it would clobber a filled cell,
         // try kicking left one col. If no clobbers, then go with that.
-        let rotation = (this.activeRotation + 1) % 4;
+        let rotation = 3 - ((3 - ((this.activeRotation + amount) % 4)) % 4);
         let posCol = this.activePosCol;
         if (!this.cellsActiveCanMove(this.activePosRow, posCol, rotation) && (rotation % 2) == 0) {
             --posCol;
@@ -812,13 +817,6 @@ class SceneGrid extends Phaser.Scene {
                 (_a = this.cellsActiveDisplay.shift()) === null || _a === void 0 ? void 0 : _a.destroy();
             }
             this.cellsActive.forEach((cell, index) => this.cellsActiveDisplay.push(this.cellActiveToScene(this.activePosRow, this.activePosCol, this.activeRotation, index, cell)));
-        }
-    }
-    // For debugging purposes only, this isn't actually part of the game.
-    receivedSet() {
-        if (ENABLE_DEBUG) {
-            this.activeSet();
-            this.gameState = GAME_STATE_SETTLE;
         }
     }
     // Drop (by one) all cells that are not settled.
@@ -893,8 +891,8 @@ class SceneGrid extends Phaser.Scene {
     startup(data) {
         var _a, _b, _c;
         if (((_a = this.gameThingies) === null || _a === void 0 ? void 0 : _a.controlsEvents) != data.controlsEvents) {
-            data.controlsEvents.on('rotateccw', this.receivedRotate, this);
-            data.controlsEvents.on('rotatecw', this.receivedRotate, this);
+            data.controlsEvents.on('rotateccw', this.receivedRotateCcw, this);
+            data.controlsEvents.on('rotatecw', this.receivedRotateCw, this);
         }
         this.gameThingies = data;
         this.gameState = GAME_STATE_PREGAME;
@@ -909,42 +907,33 @@ class SceneGrid extends Phaser.Scene {
         this.cellsNext.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
         this.cellsNext.push(CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)]);
         this.gameThingies.boardEvents.emit('newNext', this.cellsNext[0], this.cellsNext[1]);
-        if (ENABLE_DEBUG) {
-            this.debugText = this.add.text(4, 4, 'NNN', { font: '20px Sans-Serif', color: '#000' });
-            // Add some targets on the board
-            this.gridSet(0, 0, CELL_1 | CELL_TARGET);
-            this.gridSet(1, 3, CELL_2 | CELL_TARGET);
-            this.gridSet(5, 7, CELL_3 | CELL_TARGET);
-        }
-        else {
-            // Add some targets on the board
-            let maxRow = level.highestRow;
-            for (let i = 0; i < numTargets; ++i) {
-                let row = Math.floor(Math.random() * maxRow);
-                let col = Math.floor(Math.random() * (this.gridCols));
-                let target = CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)] | CELL_TARGET;
-                let placed = false;
-                for (let attempts = 0; attempts < maxRow * this.gridCols; ++attempts) {
-                    if (this.canPlaceTarget(row, col, target)) {
-                        this.gridSet(row, col, target);
-                        if ((target & CELL_TYPE_MASK) == CELL_1) {
-                            ++this.targetTotals.cell1;
-                        }
-                        else if ((target & CELL_TYPE_MASK) == CELL_2) {
-                            ++this.targetTotals.cell2;
-                        }
-                        else if ((target & CELL_TYPE_MASK) == CELL_3) {
-                            ++this.targetTotals.cell3;
-                        }
-                        break;
+        // Add some targets on the board
+        let maxRow = level.highestRow;
+        for (let i = 0; i < numTargets; ++i) {
+            let row = Math.floor(Math.random() * maxRow);
+            let col = Math.floor(Math.random() * (this.gridCols));
+            let target = CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)] | CELL_TARGET;
+            let placed = false;
+            for (let attempts = 0; attempts < maxRow * this.gridCols; ++attempts) {
+                if (this.canPlaceTarget(row, col, target)) {
+                    this.gridSet(row, col, target);
+                    if ((target & CELL_TYPE_MASK) == CELL_1) {
+                        ++this.targetTotals.cell1;
                     }
-                    ++col;
-                    if (col >= this.gridCols) {
-                        col = 0;
-                        --row;
-                        if (row < 0) {
-                            row = maxRow - 1;
-                        }
+                    else if ((target & CELL_TYPE_MASK) == CELL_2) {
+                        ++this.targetTotals.cell2;
+                    }
+                    else if ((target & CELL_TYPE_MASK) == CELL_3) {
+                        ++this.targetTotals.cell3;
+                    }
+                    break;
+                }
+                ++col;
+                if (col >= this.gridCols) {
+                    col = 0;
+                    --row;
+                    if (row < 0) {
+                        row = maxRow - 1;
                     }
                 }
             }
@@ -1070,36 +1059,6 @@ class SceneGrid extends Phaser.Scene {
                 }
             }
             ++this.ticks;
-        }
-        if (ENABLE_DEBUG && this.debugText != undefined) {
-            let stateText = "unknown";
-            switch (this.gameState) {
-                case GAME_STATE_PREGAME: {
-                    stateText = "pregame";
-                    break;
-                }
-                case GAME_STATE_RELEASING: {
-                    stateText = "releasing";
-                    break;
-                }
-                case GAME_STATE_ACTIVE: {
-                    stateText = "active";
-                    break;
-                }
-                case GAME_STATE_SETTLE: {
-                    stateText = "settle";
-                    break;
-                }
-                case GAME_STATE_DONE_LOST: {
-                    stateText = "game over";
-                    break;
-                }
-                case GAME_STATE_DONE_WON: {
-                    stateText = "win";
-                    break;
-                }
-            }
-            this.debugText.setText("time: " + time + "\ndelta: " + delta + "\nticks: " + this.ticks + "\nticksLeftover: " + this.ticksLeftover + "\n" + this.activePosRow + "," + this.activePosCol + "," + this.activeRotation + "\n" + this.gameState + ": " + stateText);
         }
     }
     activeStateUpdate() {
